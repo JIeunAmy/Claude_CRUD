@@ -1,0 +1,15 @@
+.vs/
+x64/
+x86/
+Win32/
+Debug/
+Release/
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.lib
+*.log
+*.tlog
+*.vcxproj.user
+data.json
