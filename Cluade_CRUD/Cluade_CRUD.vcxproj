@@ -154,9 +154,9 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
     <ClCompile Include="Record.cpp" />
     <ClCompile Include="JsonRepository.cpp" />
+    <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Record.h" />

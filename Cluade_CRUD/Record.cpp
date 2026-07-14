@@ -5,7 +5,7 @@ using ClaudeJson::JsonValue;
 JsonValue ToJson(const Record& record)
 {
     JsonValue json(JsonValue::Object{});
-    json["id"] = JsonValue(record.id);
+    json["id"] = JsonValue(static_cast<double>(record.id));
     json["name"] = JsonValue(record.name);
     json["value"] = JsonValue(record.value);
     return json;

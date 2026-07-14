@@ -1,8 +1,7 @@
 #include "JsonRepository.h"
 
+#include <algorithm>
 #include <filesystem>
-
-#include "Json.h"
 
 using ClaudeJson::JsonValue;
 
@@ -26,34 +25,73 @@ void JsonRepository::Load()
     }
 }
 
-bool JsonRepository::Save() const
+bool JsonRepository::Save()
 {
-    JsonValue::Array array;
-    array.reserve(records_.size());
+    JsonValue root(JsonValue::Array{});
     for (const Record& record : records_)
     {
-        array.push_back(ToJson(record));
+        root.PushBack(ToJson(record));
     }
-
-    return JsonValue(std::move(array)).Save(path_, 2);
+    return root.Save(path_, 2);
 }
 
-const Record& JsonRepository::Add(std::string name, std::string value)
+const std::vector<Record>& JsonRepository::GetAll() const
+{
+    return records_;
+}
+
+const Record* JsonRepository::FindById(int id) const
+{
+    auto it = std::find_if(records_.begin(), records_.end(),
+        [id](const Record& record) { return record.id == id; });
+    return it != records_.end() ? &(*it) : nullptr;
+}
+
+Record& JsonRepository::Add(std::string name, std::string value)
 {
     int nextId = 1;
     for (const Record& record : records_)
     {
-        if (record.id >= nextId)
-        {
-            nextId = record.id + 1;
-        }
+        nextId = std::max(nextId, record.id + 1);
     }
 
     Record record;
     record.id = nextId;
     record.name = std::move(name);
     record.value = std::move(value);
-
     records_.push_back(std::move(record));
     return records_.back();
+}
+
+bool JsonRepository::UpdateById(int id, std::optional<std::string> name, std::optional<std::string> value)
+{
+    auto it = std::find_if(records_.begin(), records_.end(),
+        [id](const Record& record) { return record.id == id; });
+    if (it == records_.end())
+    {
+        return false;
+    }
+
+    if (name.has_value())
+    {
+        it->name = std::move(*name);
+    }
+    if (value.has_value())
+    {
+        it->value = std::move(*value);
+    }
+    return true;
+}
+
+bool JsonRepository::RemoveById(int id)
+{
+    auto it = std::find_if(records_.begin(), records_.end(),
+        [id](const Record& record) { return record.id == id; });
+    if (it == records_.end())
+    {
+        return false;
+    }
+
+    records_.erase(it);
+    return true;
 }

@@ -1,62 +1,190 @@
 ﻿#include <iostream>
 #include <limits>
+#include <optional>
 #include <string>
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-#include "Json.h"
 #include "JsonRepository.h"
+#include "Json.h"
 
 namespace
 {
-    const std::string kDataFilePath = "data.json";
+    const char* kDataFilePath = "data.json";
 
-    std::string PromptNonEmpty(const std::string& label)
+    std::string ReadLine(const std::string& prompt)
     {
-        std::string input;
-        for (;;)
+        std::cout << prompt;
+        std::string line;
+        std::getline(std::cin, line);
+        return line;
+    }
+
+    std::optional<int> TryParseInt(const std::string& text)
+    {
+        try
         {
-            std::cout << label;
-            std::getline(std::cin, input);
-            if (!input.empty())
+            size_t pos = 0;
+            int value = std::stoi(text, &pos);
+            if (pos != text.size())
             {
-                return input;
+                return std::nullopt;
             }
-            std::cout << "값을 입력해야 합니다. 다시 입력해 주세요.\n";
+            return value;
+        }
+        catch (const std::exception&)
+        {
+            return std::nullopt;
         }
     }
 
-    void SaveWithRetry(JsonRepository& repository)
+    int ReadId(const std::string& prompt)
     {
-        while (!repository.Save())
+        while (true)
         {
-            std::cout << "파일 저장에 실패했습니다. 다시 시도하시겠습니까? (y/n): ";
-            std::string answer;
-            std::getline(std::cin, answer);
-            if (answer != "y" && answer != "Y")
+            std::string text = ReadLine(prompt);
+            if (auto id = TryParseInt(text))
             {
-                std::cout << "저장 없이 계속합니다. 변경 내용은 메모리에만 남아 있습니다.\n";
-                return;
+                return *id;
             }
+            std::cout << "숫자로 된 ID를 입력해주세요.\n";
         }
     }
 
-    void HandleCreate(JsonRepository& repository)
+    bool ReadYesNo(const std::string& prompt)
     {
-        std::string name = PromptNonEmpty("name: ");
-        std::string value = PromptNonEmpty("value: ");
+        std::string answer = ReadLine(prompt);
+        return !answer.empty() && (answer[0] == 'y' || answer[0] == 'Y');
+    }
 
-        const Record& created = repository.Add(name, value);
-        SaveWithRetry(repository);
+    void PrintRecord(const Record& record)
+    {
+        std::cout << "  id=" << record.id << ", name=" << record.name << ", value=" << record.value << "\n";
+    }
 
-        std::cout << "레코드가 생성되었습니다. (id=" << created.id << ")\n";
+    void PrintAll(const JsonRepository& repo)
+    {
+        const std::vector<Record>& records = repo.GetAll();
+        if (records.empty())
+        {
+            std::cout << "데이터가 없습니다.\n";
+            return;
+        }
+        for (const Record& record : records)
+        {
+            PrintRecord(record);
+        }
+    }
+
+    void HandleCreate(JsonRepository& repo)
+    {
+        std::string name = ReadLine("name: ");
+        while (name.empty())
+        {
+            std::cout << "name은 비어 있을 수 없습니다.\n";
+            name = ReadLine("name: ");
+        }
+
+        std::string value = ReadLine("value: ");
+        while (value.empty())
+        {
+            std::cout << "value는 비어 있을 수 없습니다.\n";
+            value = ReadLine("value: ");
+        }
+
+        const Record& created = repo.Add(name, value);
+        if (!repo.Save())
+        {
+            std::cout << "파일 저장에 실패했습니다. (메모리에는 반영됨)\n";
+            return;
+        }
+        std::cout << "생성 완료:\n";
+        PrintRecord(created);
+    }
+
+    void HandleReadAll(const JsonRepository& repo)
+    {
+        PrintAll(repo);
+    }
+
+    void HandleReadById(const JsonRepository& repo)
+    {
+        int id = ReadId("조회할 ID: ");
+        const Record* record = repo.FindById(id);
+        if (!record)
+        {
+            std::cout << "해당 ID의 데이터가 없습니다.\n";
+            return;
+        }
+        PrintRecord(*record);
+    }
+
+    void HandleUpdate(JsonRepository& repo)
+    {
+        int id = ReadId("수정할 ID: ");
+        const Record* existing = repo.FindById(id);
+        if (!existing)
+        {
+            std::cout << "해당 ID의 데이터가 없습니다.\n";
+            return;
+        }
+
+        std::cout << "현재 값:\n";
+        PrintRecord(*existing);
+
+        std::string name = ReadLine("새 name (변경 없으면 엔터): ");
+        std::string value = ReadLine("새 value (변경 없으면 엔터): ");
+
+        repo.UpdateById(id,
+            name.empty() ? std::nullopt : std::optional<std::string>(name),
+            value.empty() ? std::nullopt : std::optional<std::string>(value));
+
+        if (!repo.Save())
+        {
+            std::cout << "파일 저장에 실패했습니다. (메모리에는 반영됨)\n";
+            return;
+        }
+
+        std::cout << "수정 완료:\n";
+        PrintRecord(*repo.FindById(id));
+    }
+
+    void HandleDelete(JsonRepository& repo)
+    {
+        int id = ReadId("삭제할 ID: ");
+        const Record* existing = repo.FindById(id);
+        if (!existing)
+        {
+            std::cout << "해당 ID의 데이터가 없습니다.\n";
+            return;
+        }
+
+        std::cout << "삭제할 레코드:\n";
+        PrintRecord(*existing);
+
+        if (!ReadYesNo("정말 삭제하시겠습니까? (y/n): "))
+        {
+            std::cout << "삭제를 취소했습니다.\n";
+            return;
+        }
+
+        repo.RemoveById(id);
+
+        if (!repo.Save())
+        {
+            std::cout << "파일 저장에 실패했습니다. 메모리에서는 이미 삭제되었으나, "
+                         "다음 저장 성공 시까지 파일 내용과 다를 수 있습니다.\n";
+            return;
+        }
+
+        std::cout << "삭제가 완료되었습니다.\n";
     }
 
     void PrintMenu()
     {
-        std::cout << "\n1) Create\n2) 종료\n선택: ";
+        std::cout << "\n1) Create  2) Read(전체)  3) Read(ID 검색)  4) Update  5) Delete  6) 종료\n";
     }
 }
 
@@ -67,11 +195,11 @@ int main()
     SetConsoleCP(CP_UTF8);
 #endif
 
-    JsonRepository repository(kDataFilePath);
+    JsonRepository repo(kDataFilePath);
 
     try
     {
-        repository.Load();
+        repo.Load();
     }
     catch (const ClaudeJson::JsonParseError& e)
     {
@@ -80,30 +208,44 @@ int main()
     }
     catch (const std::exception& e)
     {
-        std::cout << "데이터 파일을 읽는 중 오류가 발생했습니다: " << e.what() << "\n";
+        std::cout << "데이터 파일을 불러오는 중 오류가 발생했습니다: " << e.what() << "\n";
         return 1;
     }
 
-    for (;;)
+    while (true)
     {
         PrintMenu();
-
-        std::string choice;
-        std::getline(std::cin, choice);
+        std::string choice = ReadLine("선택: ");
 
         try
         {
             if (choice == "1")
             {
-                HandleCreate(repository);
+                HandleCreate(repo);
             }
             else if (choice == "2")
+            {
+                HandleReadAll(repo);
+            }
+            else if (choice == "3")
+            {
+                HandleReadById(repo);
+            }
+            else if (choice == "4")
+            {
+                HandleUpdate(repo);
+            }
+            else if (choice == "5")
+            {
+                HandleDelete(repo);
+            }
+            else if (choice == "6")
             {
                 break;
             }
             else
             {
-                std::cout << "올바른 메뉴 번호를 입력해 주세요.\n";
+                std::cout << "1~6 사이의 번호를 입력해주세요.\n";
             }
         }
         catch (const ClaudeJson::JsonTypeError& e)
